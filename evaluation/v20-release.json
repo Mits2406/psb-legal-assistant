@@ -1,0 +1,41 @@
+{
+  "archive": "artifacts/submission-v20.zip",
+  "bytes": 1910570,
+  "sha256": "e49c1ec76b949c0dc4c6f1e4ad316e07b4e2cf4e45a31d0212a2d4cdd0736a25",
+  "root_files": [
+    "abstention.py",
+    "answer.py",
+    "answer_style.py",
+    "chunk.py",
+    "clarification.py",
+    "corpus.py",
+    "document.py",
+    "evidence.py",
+    "generation.py",
+    "llm.py",
+    "normalization.py",
+    "policy.py",
+    "precomputed_index.py",
+    "query.py",
+    "registry.py",
+    "requirements.txt",
+    "retrieval.py",
+    "solution.py",
+    "vector_index.py"
+  ],
+  "unit_tests_passed": 303,
+  "archive_wire_defaults_and_override": "PASS",
+  "csv_smoke_rows": 2,
+  "smoke_mode": "offline; validates startup and CSV contract, not organizer API",
+  "defaults": {
+    "MAX_TOKENS": 8192,
+    "TEMPERATURE": 0,
+    "MAX_WORKERS": 4,
+    "ANSWER_TIMEOUT_SECONDS": 120,
+    "API_TIMEOUT_SECONDS": 90,
+    "RERANK_TIMEOUT_SECONDS": 8,
+    "ANSWER_VERIFY": 1
+  },
+  "organizer_model_quality_measured": false,
+  "organizer_submission_sent": false
+}

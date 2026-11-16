@@ -1,0 +1,27 @@
+{
+  "version": "V20",
+  "judge_archive_sha256": "e49c1ec76b949c0dc4c6f1e4ad316e07b4e2cf4e45a31d0212a2d4cdd0736a25",
+  "judge_archive_reproduced_byte_for_byte": true,
+  "python_unit_tests": {
+    "passed": 303,
+    "log": "evaluation/final-unit-tests.log"
+  },
+  "browser_history_tests": {
+    "passed": 13,
+    "command": "node --test tests/test_history_v11.js"
+  },
+  "web_metadata_tests": {
+    "passed": 9,
+    "log": "evaluation/final-web-tests.log"
+  },
+  "offline_http_csv_smoke": "evaluation/final-smoke.json",
+  "docker_local_execution": false,
+  "docker_local_execution_reason": "Docker is not installed on the preparation host",
+  "organizer_api_called": false,
+  "organizer_submission_sent": false,
+  "runtime_core_changed": false,
+  "web_changes": [
+    "health version labels corrected to V20"
+  ],
+  "repository_url": "https://github.com/Mits2406/psb-legal-assistant"
+}

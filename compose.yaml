@@ -1,0 +1,51 @@
+services:
+  web:
+    build: .
+    init: true
+    ports:
+      - "127.0.0.1:${PORT:-8000}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Compose reads an optional .env for interpolation; no .env is required.
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
+      BASE_URL: "${BASE_URL:-}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-}"
+      GEN_MODEL: "${GEN_MODEL:-}"
+      DATA_DIR: "${DATA_DIR:-/app/data}"
+      TEMPERATURE: "${TEMPERATURE:-0}"
+      MAX_TOKENS: "${MAX_TOKENS:-8192}"
+      MAX_WORKERS: "${MAX_WORKERS:-4}"
+      ANSWER_TIMEOUT_SECONDS: "${ANSWER_TIMEOUT_SECONDS:-120}"
+      API_TIMEOUT_SECONDS: "${API_TIMEOUT_SECONDS:-90}"
+      API_RETRIES: "${API_RETRIES:-1}"
+      RUN_TIMEOUT_SECONDS: "${RUN_TIMEOUT_SECONDS:-1100}"
+      ANSWER_VERIFY: "${ANSWER_VERIFY:-1}"
+      QUERY_NORMALIZE: "${QUERY_NORMALIZE:-0}"
+      ENABLE_EMBEDDINGS: "${ENABLE_EMBEDDINGS:-1}"
+      EMB_MODEL: "${EMB_MODEL:-baai/bge-m3}"
+      EMBEDDER_API_KEY: "${EMBEDDER_API_KEY:-}"
+      EMB_API_KEY: "${EMB_API_KEY:-}"
+      EMB_KEY: "${EMB_KEY:-}"
+      ENABLE_RERANKER: "${ENABLE_RERANKER:-1}"
+      RERANKER_MODEL: "${RERANKER_MODEL:-}"
+      RERANKER_API_KEY: "${RERANKER_API_KEY:-}"
+      RERANKER_TOP_N: "${RERANKER_TOP_N:-8}"
+      RERANK_CANDIDATES: "${RERANK_CANDIDATES:-32}"
+      RERANK_TIMEOUT_SECONDS: "${RERANK_TIMEOUT_SECONDS:-8}"
+      RETRIEVAL_TIMEOUT_SECONDS: "${RETRIEVAL_TIMEOUT_SECONDS:-15}"
+      RETRIEVAL_CACHE_DIR: "${RETRIEVAL_CACHE_DIR:-}"
+      REFERENCE_DATE: "${REFERENCE_DATE:-}"
+      DIAGNOSTIC_API_FAILURES: "${DIAGNOSTIC_API_FAILURES:-0}"
+      # Accepted by the platform, but not used by V20's custom search/chunker.
+      TOP_K: "${TOP_K:-}"
+      CHUNKER: "${CHUNKER:-}"

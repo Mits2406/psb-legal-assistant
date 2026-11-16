@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#182744">
+  <title>Право на ответ — юридический ассистент</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/history.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#question">Перейти к вопросу</a>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="Право на ответ — главная">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="brand-wordmark">право<span>на ответ</span></span>
+    </a>
+    <div class="header-project"><span class="header-divider"></span><span>Юридический ассистент <b>ПСБ / Hack&amp;Change</b></span></div>
+    <div class="header-actions">
+      <span class="training-tag"><span></span>Учебная база</span>
+      <button class="icon-button mobile-source-button" id="mobile-sources" type="button" aria-label="Открыть источники" aria-controls="source-panel" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5zM15 4v4h4M8 12h8M8 16h6"/></svg></button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Рабочее пространство">
+      <div class="sidebar-top">
+        <p class="eyebrow">Рабочее пространство</p>
+        <button class="new-chat-button" id="new-chat" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Новый диалог</button>
+        <div class="nav-item active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z"/></svg><span>Консультация</span><span class="nav-dot"></span></div>
+        <button class="nav-item" id="open-history" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v5h5M4 9a8 8 0 1 1 1 10M12 7v5l3 2"/></svg><span>История диалогов</span></button>
+        <button class="nav-item" id="open-library" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h5v16H4zM10 4h5v16h-5zM16 5l4-1 4 15-4 1z"/></svg><span>База документов</span></button>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="corpus-card">
+          <div class="corpus-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7v2h18V7zM5 11v7M10 11v7M14 11v7M19 11v7M3 21h18"/></svg></div>
+          <strong>Основание важнее<br>уверенного тона.</strong>
+          <p>Проверяйте выводы по точным положениям документов.</p>
+          <div class="corpus-count"><span id="sidebar-document-count">—</span><small>документ в базе</small></div>
+        </div>
+        <div class="session-note"><span class="tiny-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5zM12 14v3"/></svg></span><p>История сохраняется<br>в этом браузере.</p></div>
+        <span class="version-label">Прототип · 2026</span>
+      </div>
+    </aside>
+
+    <main class="chat-workspace" id="main-content">
+      <div class="chat-toolbar">
+        <div><span class="section-label">КОНСУЛЬТАЦИЯ</span><h1>Вопрос к документам</h1></div>
+        <button class="icon-button compact-history" id="compact-history" type="button" aria-label="Открыть историю диалогов" title="История диалогов" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v5h5M4 9a8 8 0 1 1 1 10M12 7v5l3 2"/></svg></button><button class="icon-button compact-new-chat" id="compact-new-chat" type="button" aria-label="Начать новый диалог" title="Новый диалог"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><div class="mode-status" id="mode-status"><span class="status-dot pending"></span><span id="mode-label">Подключаем базу…</span></div>
+      </div>
+      <div class="connection-notice" id="connection-notice" hidden><span id="connection-message"></span><button id="retry-connection" type="button">Повторить</button></div>
+      <div class="storage-notice" id="storage-notice" role="status" hidden><span id="storage-message"></span><button id="retry-storage" type="button">Повторить сохранение</button></div>
+      <div class="conversation-scroll" id="conversation-scroll">
+        <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+          <div class="welcome-symbol" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M24 9v30M14 39h20M11 17h26M24 9l3 5h-6zM11 17 5 29h12l-6-12ZM37 17l-6 12h12l-6-12Z"/><path d="M5 29c0 4 12 4 12 0M31 29c0 4 12 4 12 0"/></svg></div>
+          <div class="welcome-kicker"><span></span>От вопроса к основанию</div>
+          <h2 id="welcome-title">Юридический вопрос.<br><em>Проверяемый ответ.</em></h2>
+          <p class="welcome-copy">Найдём нужные положения, учтём редакцию и покажем, на чём основан ответ. Если данных не хватает — скажем об этом.</p>
+          <div class="welcome-principles"><span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>Только по базе</span><span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>Ссылки на пункты</span><span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8"/></svg>Учёт условий</span></div>
+          <div class="examples-heading"><h3>С чего начнём?</h3><span>Выберите пример</span></div>
+          <div class="example-grid" id="example-grid">
+            <button class="example-card" type="button" data-example="rent"><span class="example-category">ДОГОВОР АРЕНДЫ</span><strong>Сколько и когда платить?</strong><span class="example-description">Условия договора А-08/2024</span><span class="example-arrow" aria-hidden="true">↗</span></button>
+            <button class="example-card" type="button" data-example="payment"><span class="example-category">ПРОВЕРКА ФАКТА</span><strong>Правда ли, что срок — 90 дней?</strong><span class="example-description">Проверим по договору поставки</span><span class="example-arrow" aria-hidden="true">↗</span></button>
+            <button class="example-card" type="button" data-example="address"><span class="example-category">ДОПСОГЛАШЕНИЕ</span><strong>Какой адрес применить?</strong><span class="example-description">Спецификация от 02.10.2024</span><span class="example-arrow" aria-hidden="true">↗</span></button>
+            <button class="example-card" type="button" data-example="approval"><span class="example-category">ПРОШЛАЯ РЕДАКЦИЯ</span><strong>Кто согласует договор?</strong><span class="example-description">Регламент на февраль 2025 года</span><span class="example-arrow" aria-hidden="true">↗</span></button>
+          </div>
+          <button class="historical-example" type="button" data-example="historical"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5v4h4M4 9a6 6 0 1 1 1 6M10 6v4l3 2"/></svg>А если нужной редакции закона нет?<span aria-hidden="true">→</span></button>
+        </section>
+        <section class="messages" id="messages" aria-label="История диалога" aria-live="polite" aria-relevant="additions"></section>
+      </div>
+      <div class="composer-area">
+        <form class="composer" id="chat-form">
+          <label class="sr-only" for="question">Ваш юридический вопрос</label>
+          <textarea id="question" name="question" rows="2" maxlength="12000" placeholder="Опишите вопрос. Укажите договор, обстоятельства и дату…" required></textarea>
+          <div class="composer-bottom">
+            <div class="date-control">
+              <button class="date-toggle" id="date-toggle" type="button" aria-expanded="false" aria-controls="date-popover"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v15H5zM8 3v4M16 3v4M5 10h14"/></svg><span id="date-label">Дата события</span><span class="optional-label">необязательно</span></button>
+              <div class="date-popover" id="date-popover" hidden><label for="event-date">На какую дату проверить условия?</label><input type="date" id="event-date" name="event_date"><p>Добавьте дату, если она важна для выбора редакции.</p><button type="button" id="clear-date">Убрать дату</button></div>
+            </div>
+            <div class="send-controls"><span class="keyboard-hint">Ctrl ↵</span><button class="send-button" id="send-button" type="submit" aria-label="Отправить вопрос"><span>Спросить</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div>
+          </div>
+        </form>
+        <p class="composer-footnote" id="composer-footnote">Учебный корпус. Проверяйте применимость положений по источникам.</p>
+      </div>
+    </main>
+
+    <div class="source-backdrop" id="source-backdrop" hidden></div>
+    <aside class="source-panel" id="source-panel" aria-label="Источники и документы">
+      <div class="source-panel-heading"><div><span class="section-label">ОПОРА ДЛЯ ВЫВОДА</span><h2>Источники</h2></div><span class="source-count" id="source-count">—</span><button class="icon-button close-source-panel" id="close-source-panel" type="button" aria-label="Закрыть источники"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="source-tabs" role="tablist" aria-label="Панели источников"><button type="button" role="tab" id="tab-evidence" aria-selected="false" aria-controls="evidence-panel" tabindex="-1">К ответу<span id="evidence-count" hidden>0</span></button><button type="button" role="tab" id="tab-documents" aria-selected="true" aria-controls="documents-panel" tabindex="0">Все документы</button></div>
+      <section class="evidence-panel source-tab-panel" id="evidence-panel" role="tabpanel" aria-labelledby="tab-evidence" hidden><div id="evidence-content"></div></section>
+      <section class="documents-panel source-tab-panel" id="documents-panel" role="tabpanel" aria-labelledby="tab-documents">
+        <div class="document-filters"><div class="search-input"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15 15 5 5"/></svg><label class="sr-only" for="document-search">Поиск документов</label><input id="document-search" type="search" placeholder="Название или номер документа" autocomplete="off"></div><label class="sr-only" for="document-kind">Тип документа</label><select id="document-kind"><option value="all">Все типы документов</option></select></div>
+        <div class="document-list" id="document-list" aria-live="polite"><div class="panel-loading"><span class="spinner"></span>Загружаем документы…</div></div>
+        <p class="document-base-note">База подготовлена для кейса.<br>Это не полный архив законодательства.</p>
+      </section>
+      <section class="document-view" id="document-view" hidden aria-label="Просмотр документа"><div class="document-view-top"><button class="back-button" id="document-back" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11 4-6 6 6 6M5 10h11"/></svg>К списку источников</button><button class="icon-button" type="button" id="copy-document" aria-label="Скопировать текст документа" title="Скопировать текст"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h12v13H8zM16 8V3H3v13h5"/></svg></button></div><div class="document-view-heading"><span class="document-type" id="document-view-type"></span><h3 id="document-view-title"></h3><p id="document-view-description"></p></div><div class="document-loading" id="document-loading" hidden><span class="spinner"></span>Открываем источник…</div><div class="document-text-container" id="document-text-container"><pre id="document-text" class="document-text" tabindex="0" aria-label="Исходный текст документа"></pre></div></section>
+    </aside>
+  </div>
+  <dialog class="history-dialog" id="history-dialog" aria-labelledby="history-title" aria-describedby="history-description">
+    <div class="history-heading"><div><span class="section-label">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</span><h2 id="history-title">История диалогов</h2></div><button class="icon-button" id="close-history" type="button" aria-label="Закрыть историю"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <p id="history-description">Вопросы, ответы и источники сохраняются в этом браузере между посещениями. На другом устройстве эта история недоступна.</p>
+    <div class="history-list" id="history-list"></div>
+    <div class="history-actions"><button id="history-new-chat" type="button">+ Новый диалог</button><button id="clear-history" type="button">Удалить всю историю</button></div>
+    <div class="history-delete-confirm" id="history-delete-confirm" hidden><p>Удалить все сохранённые диалоги из этого браузера?</p><button id="confirm-clear-history" type="button">Удалить всё</button><button id="cancel-clear-history" type="button">Отмена</button></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

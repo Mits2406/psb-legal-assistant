@@ -1,0 +1,44 @@
+name: Verify final package
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python checks
+        run: python -m unittest discover -s tests -v
+      - name: Browser history checks
+        run: node --test tests/test_history_v11.js
+      - name: Verify judge archive reproduces V20
+        run: |
+          python build_submission.py --output /tmp/submission-v20.zip
+          cmp artifacts/submission-v20.zip /tmp/submission-v20.zip
+      - name: Build and start Docker application
+        run: docker compose up --build --wait --wait-timeout 120
+      - name: Check HTTP health and knowledge base
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          with urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=10) as response:
+              health = json.load(response)
+          assert health['documents'] == 21, health
+          assert health['mode'] == 'extractive', health
+          print('HTTP health and offline startup: PASS')
+          PY
+      - name: Docker logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop Docker application
+        if: always()
+        run: docker compose down

@@ -1,0 +1,14 @@
+test_catalog_and_exact_source_ranges (test_app.HTTPBoundaryTests.test_catalog_and_exact_source_ranges) ... ok
+test_dialogue_state_and_reference_date_are_request_scoped (test_app.HTTPBoundaryTests.test_dialogue_state_and_reference_date_are_request_scoped) ... ok
+test_limits_and_content_type (test_app.HTTPBoundaryTests.test_limits_and_content_type) ... ok
+test_max_length_past_question_can_retain_its_explicit_date (test_app.HTTPBoundaryTests.test_max_length_past_question_can_retain_its_explicit_date) ... ok
+test_post_preserves_history_and_date_without_server_session (test_app.HTTPBoundaryTests.test_post_preserves_history_and_date_without_server_session) ... ok
+test_real_corpus_health_without_credentials (test_app.HTTPBoundaryTests.test_real_corpus_health_without_credentials) ... ok
+test_registry_exposes_exact_proofs_without_credentials (test_app.HTTPBoundaryTests.test_registry_exposes_exact_proofs_without_credentials) ... ok
+test_rejects_invalid_dates_roles_and_types_before_answering (test_app.HTTPBoundaryTests.test_rejects_invalid_dates_roles_and_types_before_answering) ... ok
+test_static_allowlist_blocks_secrets_and_path_traversal (test_app.HTTPBoundaryTests.test_static_allowlist_blocks_secrets_and_path_traversal) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.651s
+
+OK
