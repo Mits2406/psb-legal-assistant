@@ -23,5 +23,15 @@
   "web_changes": [
     "health version labels corrected to V20"
   ],
-  "repository_url": "https://github.com/Mits2406/psb-legal-assistant"
+  "repository_url": "https://github.com/Mits2406/psb-legal-assistant",
+  "docker_ci_execution": {
+    "status": "PASS",
+    "url": "https://github.com/Mits2406/psb-legal-assistant/actions/runs/43848023770",
+    "commit": "e55c8ce5aa0f9f9a11be6fbe1dbdda10a7864edb",
+    "checks": [
+      "Docker image build",
+      "docker compose up --wait",
+      "HTTP health:21 documents,extractive mode"
+    ]
+  }
 }
