@@ -18,3 +18,6 @@
 **/*.key
 **/*credentials*
 **/*token*
+**/state/**
+**/*.sqlite*
+**/*.db

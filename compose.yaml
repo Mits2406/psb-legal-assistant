@@ -5,6 +5,8 @@ services:
     ports:
       - "127.0.0.1:${PORT:-8000}:8000"
     read_only: true
+    volumes:
+      - psb-state:/app/state
     tmpfs:
       - /tmp:size=64m,mode=1777
     cap_drop:
@@ -13,6 +15,13 @@ services:
       - no-new-privileges:true
     environment:
       # Compose reads an optional .env for interpolation; no .env is required.
+      # Fixed container location backed by the named volume above.
+      PSB_STATE_DIR: /app/state
+      # First-start bootstrap only; existing accounts retain their passwords.
+      PSB_USER_PASSWORD: "${PSB_USER_PASSWORD:-}"
+      PSB_ADMIN_PASSWORD: "${PSB_ADMIN_PASSWORD:-}"
+      # Use 1 behind HTTPS; keep 0 for the local HTTP address.
+      PSB_COOKIE_SECURE: "${PSB_COOKIE_SECURE:-0}"
       LLM_BASE_URL: "${LLM_BASE_URL:-}"
       OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
       BASE_URL: "${BASE_URL:-}"
@@ -49,3 +58,6 @@ services:
       # Accepted by the platform, but not used by V20's custom search/chunker.
       TOP_K: "${TOP_K:-}"
       CHUNKER: "${CHUNKER:-}"
+
+volumes:
+  psb-state:

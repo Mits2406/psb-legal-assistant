@@ -1,0 +1,68 @@
+{
+  "checked_at": "2026-11-16T10:48:41.519Z",
+  "harness": "Node vm shared context; original synchronous test callbacks executed with node:assert/strict; no stubs for assertions or history module",
+  "tests_file_sha256": "558d15795e9eb8883cf3adb9613b978b765bd0a5e1250c2af32d387ef1a25881",
+  "passed": 13,
+  "total": 13,
+  "tests": [
+    {
+      "name": "pending interpretation survives reload and stays inside its conversation",
+      "pass": true
+    },
+    {
+      "name": "invalid or oversized interpretation state cannot expand the request body",
+      "pass": true
+    },
+    {
+      "name": "persists question before response, reload recovers interrupted turn and retry uses same ID",
+      "pass": true
+    },
+    {
+      "name": "restores full answer, citation identity/offsets, event date, and actual self-check result",
+      "pass": true
+    },
+    {
+      "name": "new chat archives preceding one, restores selected chat, isolates model context and deletes history",
+      "pass": true
+    },
+    {
+      "name": "failed requests and technical diagnostic answers do not enter model context as assistant facts",
+      "pass": true
+    },
+    {
+      "name": "retry of earlier question excludes future turns and cannot duplicate the user turn",
+      "pass": true
+    },
+    {
+      "name": "context obeys count and total character budget, retains complete adjacent pairs",
+      "pass": true
+    },
+    {
+      "name": "corrupt storage is not overwritten until user explicitly clears it",
+      "pass": true
+    },
+    {
+      "name": "quota failure keeps unsaved conversation in memory and older data on disk; save can be retried",
+      "pass": true
+    },
+    {
+      "name": "another tab creating a chat cannot erase a response to an older in-flight turn",
+      "pass": true
+    },
+    {
+      "name": "deletion in another tab wins over a late response and does not resurrect private messages",
+      "pass": true
+    },
+    {
+      "name": "invalid stored citations and credential fields are discarded, user text stays plain data",
+      "pass": true
+    }
+  ],
+  "static_checks": {
+    "app_js_syntax": "passed",
+    "missing_dom_ids": [],
+    "corpus_specific_metadata_in_examples": "absent",
+    "question_placeholder": "neutral"
+  },
+  "limitations": "Does not replace browser E2E or backend access tests."
+}

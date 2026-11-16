@@ -1,0 +1,25 @@
+{
+  "version": "v21-web-access",
+  "python_tests": 341,
+  "new_access_tests": 38,
+  "python_result": "PASS",
+  "http_csv_smoke": "PASS",
+  "frontend_tests": 13,
+  "frontend_result": "PASS",
+  "browser_scenarios": {
+    "admin_assign_level_2": "PASS",
+    "user_sees_20_admin_sees_21": "PASS",
+    "user_hidden_contract_answer": "abstain_without_amount",
+    "admin_answer": "450000_RUB_with_clause_3.1",
+    "history_restored_after_reload": "PASS",
+    "account_history_isolation": "PASS",
+    "neutral_level_1_examples": "PASS",
+    "demo_label_restored_to_1": true
+  },
+  "local_model": "gpt-6-luna via personal local bridge",
+  "organizer_api_tested": false,
+  "judge_submissions_sent": 0,
+  "frozen_judge_zip_sha256": "e49c1ec76b949c0dc4c6f1e4ad316e07b4e2cf4e45a31d0212a2d4cdd0736a25",
+  "private_state_excluded": true,
+  "docker_validation": "GitHub Actions on push"
+}

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "mode": "offline",
+  "documents": 21,
+  "chunks": 637,
+  "http_assets": 4,
+  "document_offsets": "PASS",
+  "authentication_and_server_history": "PASS",
+  "clarification_and_followup": "PASS",
+  "csv_rows": 2,
+  "external_model_calls": 0,
+  "submissions_sent": 0
+}

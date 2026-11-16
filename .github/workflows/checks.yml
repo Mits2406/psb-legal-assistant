@@ -24,21 +24,99 @@ jobs:
         run: |
           python build_submission.py --output /tmp/submission-v20.zip
           cmp artifacts/submission-v20.zip /tmp/submission-v20.zip
-      - name: Build and start Docker application
-        run: docker compose up --build --wait --wait-timeout 120
-      - name: Check HTTP health and knowledge base
+      - name: Prepare isolated Docker test accounts
         run: |
           python - <<'PY'
-          import json, urllib.request
-          with urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=10) as response:
-              health = json.load(response)
+          import os, secrets
+          with open(os.environ['GITHUB_ENV'], 'a') as target:
+              for name in ('PSB_USER_PASSWORD', 'PSB_ADMIN_PASSWORD'):
+                  target.write(name + '=' + secrets.token_urlsafe(24) + '\n')
+          PY
+      - name: Build and start Docker application
+        run: docker compose up --build --wait --wait-timeout 120
+      - name: Check HTTP authentication and document access
+        run: |
+          python - <<'PY'
+          import http.cookiejar, json, os, urllib.error, urllib.request
+          base = 'http://127.0.0.1:8000'
+          def browser():
+              return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+          def request(client, path, data=None, csrf=None):
+              headers = {'Content-Type': 'application/json'} if data is not None else {}
+              if csrf:
+                  headers['X-CSRF-Token'] = csrf
+              req = urllib.request.Request(base + path, headers=headers,
+                  data=json.dumps(data).encode() if data is not None else None)
+              try:
+                  with client.open(req, timeout=10) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as error:
+                  return error.code, json.load(error)
+          anonymous, admin, user = browser(), browser(), browser()
+          code, health = request(anonymous, '/api/health')
+          assert code == 200 and health['authentication_required'] is True, health
+          assert not {'documents', 'chunks', 'model'} & health.keys(), health
+          assert request(anonymous, '/api/documents')[0] == 401
+          code, session = request(admin, '/api/login',
+              {'username': 'admin', 'password': os.environ['PSB_ADMIN_PASSWORD']})
+          assert code == 200 and session['user']['level'] == 2, session
+          csrf = session['csrf_token']
+          _, health = request(admin, '/api/health')
           assert health['documents'] == 21, health
           assert health['mode'] == 'extractive', health
-          print('HTTP health and offline startup: PASS')
+          assert health['features']['history'] == 'server-account', health
+          _, catalog = request(admin, '/api/documents')
+          document_id = catalog['documents'][0]['id']
+          assert request(admin, '/api/documents/' + document_id + '/access',
+              {'access_level': 2}, csrf)[0] == 200
+          code, session = request(user, '/api/login',
+              {'username': 'user', 'password': os.environ['PSB_USER_PASSWORD']})
+          assert code == 200 and session['user']['level'] == 1, session
+          _, catalog = request(user, '/api/documents')
+          assert len(catalog['documents']) == 20, catalog
+          assert document_id not in {doc['id'] for doc in catalog['documents']}
+          assert request(user, '/api/documents/' + document_id)[0] == 404
+          assert request(user, '/api/documents/' + document_id + '/access',
+              {'access_level': 1}, session['csrf_token'])[0] == 403
+          assert request(user, '/api/logout', {}, session['csrf_token'])[0] == 200
+          assert request(user, '/api/documents')[0] == 401
+          with open(os.environ['GITHUB_ENV'], 'a') as target:
+              target.write('PSB_CI_PRIVATE_DOC=' + document_id + '\n')
+          print('HTTP authentication, scope, access edits and logout: PASS')
+          PY
+      - name: Check state ownership and restart persistence
+        run: |
+          docker compose exec -T web python - <<'PY'
+          import os, pathlib, stat
+          state = pathlib.Path(os.environ['PSB_STATE_DIR'])
+          assert os.getuid() == 10001
+          assert state.stat().st_uid == 10001
+          assert (state / 'access.sqlite').stat().st_uid == 10001
+          assert stat.S_IMODE((state / 'access.sqlite').stat().st_mode) == 0o600
+          PY
+          docker compose down
+          docker compose up --wait --wait-timeout 120
+          python - <<'PY'
+          import http.cookiejar, json, os, urllib.request
+          base = 'http://127.0.0.1:8000'
+          for username, expected in (('user', 20), ('admin', 21)):
+              client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+              req = urllib.request.Request(base + '/api/login',
+                  data=json.dumps({'username': username, 'password': os.environ['PSB_' + username.upper() + '_PASSWORD']}).encode(),
+                  headers={'Content-Type': 'application/json'})
+              with client.open(req, timeout=10) as response:
+                  assert json.load(response)['authenticated'] is True
+              with client.open(base + '/api/documents', timeout=10) as response:
+                  documents = json.load(response)['documents']
+              assert len(documents) == expected
+              if username == 'admin':
+                  hidden = next(doc for doc in documents if doc['id'] == os.environ['PSB_CI_PRIVATE_DOC'])
+                  assert hidden['access_level'] == 2
+          print('Private state ownership and persistence across container recreation: PASS')
           PY
       - name: Docker logs on failure
         if: failure()
         run: docker compose logs --no-color
       - name: Stop Docker application
         if: always()
-        run: docker compose down
+        run: docker compose down --volumes

@@ -3,13 +3,16 @@ import http.client
 import json
 from pathlib import Path
 import sys
+import tempfile
 import threading
 import types
 import unittest
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app import create_server, validate_chat, RequestError
+from access_control import AccessStore
 from corpus import Corpus
 from registry import RuleRegistry
 
@@ -22,17 +25,21 @@ class TestAssistant:
         self.calls = []
 
     def answer(self, question, history=None, event_date=None, deadline=None, **options):
-        self.calls.append((question, history, event_date, deadline))
-        self.last_options = options
+        self.calls.append((question, history, event_date, deadline, options))
         return {'answer': 'Проверочный ответ', 'status': 'answer', 'mode': 'extractive',
-                'citations': [], 'missing_facts': [], 'warnings': [], 'trace': {}, 'question': question}
+                'citations': [], 'missing_facts': [], 'warnings': [], 'trace': {}, 'question': question,
+                'dialogue_state': {'version': 1, 'last_question': question}}
 
 
 class HTTPBoundaryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.assistant = TestAssistant()
-        cls.server = create_server('127.0.0.1', 0, cls.assistant)
+        cls.directory = tempfile.TemporaryDirectory(prefix='psb-app-test-')
+        cls.access = AccessStore(Path(cls.directory.name) / 'access.sqlite', users={
+            'user': {'password': 'fixture-app-test-password', 'level': 1},
+        })
+        cls.server = create_server('127.0.0.1', 0, cls.assistant, access_store=cls.access)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.port = cls.server.server_port
@@ -42,20 +49,40 @@ class HTTPBoundaryTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=2)
+        cls.access.close()
+        cls.directory.cleanup()
 
-    def request(self, method, path, body=None, headers=None):
+    def setUp(self):
+        self.actor = None
+        code, headers, body = self.request('POST', '/api/login',
+            json.dumps({'username': 'user', 'password': 'fixture-app-test-password'}).encode(),
+            {'Content-Type': 'application/json'}, authenticated=False)
+        self.assertEqual(code, 200, body)
+        self.actor = {**json.loads(body), 'cookie': headers['Set-Cookie'].split(';', 1)[0]}
+
+    def request(self, method, path, body=None, headers=None, authenticated=True):
+        supplied = dict(headers or {})
+        if authenticated and self.actor:
+            supplied.setdefault('Cookie', self.actor['cookie'])
+            if method == 'POST':
+                supplied.setdefault('X-CSRF-Token', self.actor['csrf_token'])
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=4)
-        connection.request(method, path, body=body, headers=headers or {})
+        connection.request(method, path, body=body, headers=supplied)
         response = connection.getresponse()
         result = response.status, dict(response.getheaders()), response.read()
         connection.close()
         return result
 
     def post(self, data, headers=None):
-        return self.request('POST', '/api/chat', json.dumps(data, ensure_ascii=False).encode(),
+        payload = {'acl_revision': self.actor['acl_revision'], 'conversation_id': uuid.uuid4().hex, **data}
+        return self.request('POST', '/api/chat', json.dumps(payload, ensure_ascii=False).encode(),
                             {'Content-Type': 'application/json', **(headers or {})})
 
     def test_real_corpus_health_without_credentials(self):
+        code, _, body = self.request('GET', '/api/health', authenticated=False)
+        self.assertEqual(code, 200)
+        self.assertEqual(set(json.loads(body)), {'status', 'version', 'authentication_required'})
+        self.assertEqual(self.request('GET', '/api/documents', authenticated=False)[0], 401)
         code, headers, body = self.request('GET', '/api/health')
         health = json.loads(body)
         self.assertEqual(code, 200)
@@ -63,11 +90,11 @@ class HTTPBoundaryTests(unittest.TestCase):
         self.assertGreater(health['chunks'], 21)
         self.assertEqual(health['mode'], 'extractive')
         self.assertIsNone(health['model'])
-        self.assertEqual(health['version'], 'v20')
-        self.assertEqual(health['core_revision'], 'v20-quality-defaults')
+        self.assertEqual(health['version'], 'v21')
+        self.assertEqual(health['core_revision'], 'v20-quality-defaults+access')
         self.assertFalse(health['features']['self_check_available'])
         self.assertTrue(health['features']['clarifications_before_search'])
-        self.assertEqual(health['features']['history'], 'browser')
+        self.assertEqual(health['features']['history'], 'server-account')
         self.assertFalse(health['retrieval']['dense_enabled'])
         self.assertNotIn(b'never-expose-this', body)
         self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
@@ -85,7 +112,7 @@ class HTTPBoundaryTests(unittest.TestCase):
         for chunk in document['chunks']:
             self.assertEqual(document['text'][chunk['start']:chunk['end']], chunk['text'])
 
-    def test_registry_exposes_exact_proofs_without_credentials(self):
+    def test_registry_exposes_exact_proofs_without_api_credentials(self):
         code, _, body = self.request('GET', '/api/registry')
         registry = json.loads(body)
         self.assertEqual(code, 200)
@@ -105,14 +132,16 @@ class HTTPBoundaryTests(unittest.TestCase):
                      '/static/../.env', '/static/%2e%2e/.env', '/static/../../app.py']:
             self.assertEqual(self.request('GET', path)[0], 404, path)
 
-    def test_post_preserves_history_and_date_without_server_session(self):
-        data = {'question': '  Когда платить?  ', 'history': [{'role': 'user', 'content': 'По А-08/2024'}],
-                'event_date': '2025-03-01'}
+    def test_post_preserves_server_history_and_date(self):
+        conversation_id = uuid.uuid4().hex
+        self.assertEqual(self.post({'question': 'По А-08/2024', 'conversation_id': conversation_id})[0], 200)
+        data = {'question': '  Когда платить?  ', 'conversation_id': conversation_id, 'event_date': '2025-03-01'}
         code, _, _ = self.post(data)
         self.assertEqual(code, 200)
-        question, history, event_date, deadline = self.assistant.calls[-1]
+        question, history, event_date, deadline, _ = self.assistant.calls[-1]
         self.assertEqual(question, 'Когда платить?')
-        self.assertEqual(history, data['history'])
+        self.assertEqual(history, [{'role': 'user', 'content': 'По А-08/2024'},
+                                   {'role': 'assistant', 'content': 'Проверочный ответ'}])
         self.assertEqual(event_date, '2025-03-01')
         self.assertIsInstance(deadline, float)
         self.post({'question': 'Следующий независимый вопрос'})
@@ -145,22 +174,27 @@ class HTTPBoundaryTests(unittest.TestCase):
         self.assertEqual(self.request('GET', '/api/health', headers={'Host': 'outside.example'})[0], 403)
 
     def test_max_length_past_question_can_retain_its_explicit_date(self):
+        conversation_id = uuid.uuid4().hex
         content = 'я' * 12000 + '\nДата события: 2025-03-01'
-        self.assertEqual(self.post({'question': 'А что изменилось?',
-                                    'history': [{'role': 'user', 'content': content}]})[0], 200)
+        self.assertEqual(self.post({'question': 'я' * 12000, 'event_date': '2025-03-01',
+                                    'conversation_id': conversation_id})[0], 200)
+        self.assertEqual(self.post({'question': 'А что изменилось?', 'conversation_id': conversation_id})[0], 200)
+        self.assertEqual(self.assistant.calls[-1][1][0], {'role': 'user', 'content': content})
 
-    def test_dialogue_state_and_reference_date_are_request_scoped(self):
-        state = {'version': 1, 'pending_fields': ['event_date'], 'original_task': 'Кто согласует договор?'}
-        self.assertEqual(self.post({'question': 'Сейчас.', 'dialogue_state': state,
+    def test_dialogue_state_is_server_scoped_and_reference_date_is_per_request(self):
+        conversation_id = uuid.uuid4().hex
+        self.assertEqual(self.post({'question': 'Кто согласует договор?', 'conversation_id': conversation_id})[0], 200)
+        state = {'version': 1, 'last_question': 'Кто согласует договор?'}
+        self.assertEqual(self.post({'question': 'Сейчас.', 'conversation_id': conversation_id,
                                     'reference_date': '2026-11-15'})[0], 200)
-        self.assertEqual(self.assistant.last_options,
+        self.assertEqual(self.assistant.calls[-1][4],
                          {'dialogue_state': state, 'reference_date': '2026-11-15'})
         self.post({'question': 'Новый вопрос'})
-        self.assertEqual(self.assistant.last_options, {})
-        for value in ['not-a-state', {'version': 2}]:
+        self.assertEqual(self.assistant.calls[-1][4], {'dialogue_state': None})
+        for value in ['not-a-state', {'version': 2}, state]:
             self.assertEqual(self.post({'question': 'Вопрос', 'dialogue_state': value})[0], 400)
         self.assertEqual(self.post({'question': 'Вопрос', 'reference_date': '2026-02-30'})[0], 400)
-        self.assertEqual(self.post({'question': 'Вопрос', 'dialogue_state': {'version': 1, 'text': 'x' * 40001}})[0], 413)
+        self.assertEqual(self.post({'question': 'Вопрос', 'dialogue_state': {'version': 1, 'text': 'x' * 40001}})[0], 400)
 
 
 if __name__ == '__main__':

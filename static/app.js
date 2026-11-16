@@ -6,21 +6,34 @@
     documents: [], documentCache: new Map(), citations: [], history: [],
     tab: 'documents', currentDocument: null, mode: 'extractive', pending: false,
     requestId: 0, documentRequestId: 0, controller: null, lastQuestion: null, pendingTurn: null,
+    user: null, csrfToken: '', aclRevision: null, historyScope: '', authEpoch: 0,
+    sessionRequestId: 0, authBusy: false, historyLoaded: false, manualLogin: false,
   };
-  let historyStorage;
-  try { historyStorage = window.localStorage; } catch (_) {
-    historyStorage = { getItem() { throw new Error('Unavailable'); }, setItem() { throw new Error('Unavailable'); }, removeItem() {} };
+  // Document answers are held in memory only. The authenticated server owns
+  // durable history; another account must never read an earlier browser cache.
+  function memoryHistory(raw = null) {
+    let value = raw;
+    return { getItem() { return value; }, setItem(_key, next) { value = next; }, removeItem() { value = null; } };
   }
-  const conversations = new PSBHistory.Store(historyStorage, message => {
-    $('storage-message').textContent = message;
-    $('storage-notice').hidden = !message;
-  });
+  function makeHistory(raw = null) {
+    return new PSBHistory.Store(memoryHistory(raw), message => {
+      $('storage-message').textContent = message;
+      $('storage-notice').hidden = !message;
+    });
+  }
+  let conversations = makeHistory();
+  try {
+    for (const key of Object.keys(window.localStorage)) {
+      if (key === PSBHistory.KEY || key.startsWith('psb.auth.history.')) window.localStorage.removeItem(key);
+    }
+  } catch (_) { /* No persistent client history is used by this version. */ }
   const examples = {
-    rent: 'Какая арендная плата по договору А-08/2024 и когда её нужно вносить?',
-    payment: 'Верно ли, что по договору П-17/2024 оплата производится в течение 90 дней?',
-    address: 'Какой адрес доставки применяется по договору П-17/2024 к партии со спецификацией от 02.10.2024?',
-    approval: 'Нужно ли согласование финансового директора для обычного договора на 2 млн рублей в феврале 2025 года?',
-    historical: 'Какую ставку НДС следовало применять в 2020 году? Есть ли в базе нужная редакция закона?',
+    rent: 'Какие условия арендной платы содержатся в доступных мне документах?',
+    payment: 'Какие сроки оплаты предусмотрены в доступных мне договорах?',
+    address: 'Как определить адрес доставки по доступным мне документам?',
+    approval: 'Кто согласует договор и какие условия согласования указаны в доступных мне документах?',
+    historical: 'Есть ли в доступных мне документах редакция закона, действовавшая на дату события?',
+    generic: 'Найди условия оплаты в доступных мне документах.',
   };
   const kindNames = {
     law: 'Законодательство', legal: 'Законодательство', legislation: 'Законодательство',
@@ -80,15 +93,175 @@
       toast('Не удалось скопировать. Выделите текст вручную.');
     }
   }
-  async function fetchJson(url, options = {}) {
-    const response = await fetch(url, options);
+  function staleResponse() {
+    const error = new Error('Запрос относится к предыдущему сеансу.');
+    error.name = 'StaleSessionError';
+    return error;
+  }
+  async function fetchJson(url, options = {}, sessionRequest = false) {
+    const epoch = state.authEpoch;
+    const headers = { ...options.headers };
+    if ((options.method || 'GET').toUpperCase() !== 'GET' && state.csrfToken) headers['X-CSRF-Token'] = state.csrfToken;
+    const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
     let payload;
     try { payload = await response.json(); } catch (_) { throw new Error('Сервер вернул неожиданный ответ. Попробуйте ещё раз.'); }
+    if (!sessionRequest && epoch !== state.authEpoch) throw staleResponse();
     if (!response.ok) {
       const detail = typeof payload.detail === 'string' ? payload.detail : typeof payload.error === 'string' ? payload.error : '';
-      throw new Error(detail || `Не удалось выполнить запрос (${response.status}). Попробуйте ещё раз.`);
+      if (response.status === 401 && !sessionRequest) signedOut('Сеанс завершён. Войдите снова.');
+      if (response.status === 409 && !sessionRequest) {
+        await refreshSession(true);
+        toast('Права доступа изменились. Начните новый диалог.');
+      }
+      const error = new Error(detail || `Не удалось выполнить запрос (${response.status}). Попробуйте ещё раз.`);
+      error.status = response.status;
+      throw error;
     }
     return payload;
+  }
+  function clearWorkspace() {
+    cancelPending();
+    state.authEpoch += 1; state.documentRequestId += 1;
+    state.documents = []; state.documentCache.clear(); state.currentDocument = null;
+    state.history = []; state.citations = []; state.lastQuestion = null; state.historyLoaded = false;
+    conversations = makeHistory();
+    $('messages').replaceChildren(); $('document-list').replaceChildren(); $('document-text').replaceChildren();
+    $('history-list').replaceChildren(); $('document-view-title').textContent = '';
+    $('document-view-description').textContent = ''; $('document-view-type').textContent = '';
+    $('document-access').hidden = true; $('document-access-controls').hidden = true;
+    $('document-access-message').hidden = true; $('question').value = ''; $('event-date').value = '';
+    $('storage-notice').hidden = true; $('toast').hidden = true; clearTimeout(toast.timer);
+    $('source-panel').classList.remove('is-open'); $('source-backdrop').hidden = true;
+    $('mobile-sources').setAttribute('aria-expanded', 'false');
+    $('document-search').value = ''; $('document-kind').value = 'all';
+    $('example-grid').hidden = true; $('historical-example').hidden = true; $('generic-example').hidden = true;
+    if ($('history-dialog').open) $('history-dialog').close();
+    setCitations([]); setTab('documents'); updateDocumentCount(0); updateDate();
+  }
+  function signedOut(message = '') {
+    clearWorkspace();
+    state.user = null; state.csrfToken = ''; state.aclRevision = null; state.historyScope = '';
+    $('workspace').hidden = true; $('account-controls').hidden = true; $('mobile-sources').hidden = true;
+    $('login-screen').hidden = false; $('login-error').textContent = message; $('login-error').hidden = !message;
+    $('account-label').textContent = ''; $('login-password').value = '';
+  }
+  function validSession(payload) {
+    return payload?.authenticated === true && typeof payload.user?.username === 'string'
+      && [1, 2].includes(payload.user.level) && Number.isInteger(payload.acl_revision)
+      && typeof payload.csrf_token === 'string' && payload.csrf_token.length > 0
+      && typeof payload.history_scope === 'string' && payload.history_scope.length > 0;
+  }
+  async function loadHistory() {
+    const epoch = state.authEpoch;
+    const payload = await fetchJson('/api/history');
+    if (epoch !== state.authEpoch || !state.user) return;
+    const checked = PSBHistory.decode(JSON.stringify(payload.history));
+    conversations = makeHistory(JSON.stringify(checked));
+    state.historyLoaded = true;
+    renderConversation(); renderHistory();
+  }
+  async function acceptSession(payload, forceReset = false) {
+    if (!validSession(payload)) {
+      // Session polling must not erase a password while a signed-out user types.
+      if (state.user) signedOut('Сеанс завершён. Войдите снова.');
+      return;
+    }
+    const changed = forceReset || state.historyScope !== payload.history_scope
+      || state.user?.username !== payload.user.username || state.user?.level !== payload.user.level
+      || state.aclRevision !== payload.acl_revision;
+    const aclChanged = Boolean(state.user) && state.aclRevision !== payload.acl_revision;
+    if (changed) clearWorkspace();
+    state.user = { username: payload.user.username, level: payload.user.level };
+    state.csrfToken = payload.csrf_token; state.aclRevision = payload.acl_revision; state.historyScope = payload.history_scope;
+    $('account-label').textContent = `${state.user.username} · Уровень ${state.user.level}`;
+    $('example-grid').hidden = state.user.level !== 2;
+    $('historical-example').hidden = state.user.level !== 2;
+    $('generic-example').hidden = state.user.level !== 1;
+    $('example-hint').textContent = state.user.level === 2 ? 'Выберите пример' : 'Только доступные вам документы';
+    $('account-controls').hidden = false; $('mobile-sources').hidden = false;
+    $('login-screen').hidden = true; $('workspace').hidden = false; $('login-error').hidden = true;
+    if (changed) {
+      const epoch = state.authEpoch;
+      try { await loadHistory(); }
+      catch (error) {
+        if (epoch !== state.authEpoch) return;
+        signedOut('Не удалось загрузить историю и проверить права. Войдите снова.');
+        return;
+      }
+      if (epoch !== state.authEpoch) return;
+      await Promise.allSettled([loadHealth(), loadDocuments()]);
+      if (aclChanged && epoch === state.authEpoch) toast('Права доступа изменились. Начните новый диалог.');
+    }
+  }
+  async function refreshSession(forceReset = false) {
+    if (state.authBusy || state.manualLogin) return;
+    const request = ++state.sessionRequestId;
+    try {
+      const payload = await fetchJson('/api/session', {}, true);
+      if (request !== state.sessionRequestId) return;
+      await acceptSession(payload, forceReset);
+    } catch (_) {
+      if (request !== state.sessionRequestId) return;
+      const message = 'Не удалось проверить сеанс. Проверьте подключение и войдите снова.';
+      if (state.user) signedOut(message);
+      else { $('login-error').textContent = message; $('login-error').hidden = false; }
+    }
+  }
+  async function login(event) {
+    event.preventDefault();
+    if (state.authBusy) return;
+    state.authBusy = true; state.sessionRequestId += 1;
+    $('login-submit').disabled = true; $('login-error').hidden = true;
+    const username = $('login-username').value.trim(), password = $('login-password').value;
+    try {
+      const payload = await fetchJson('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }) }, true);
+      if (!validSession(payload)) throw new Error('Не удалось подтвердить вход.');
+      state.manualLogin = false;
+      await acceptSession(payload, true);
+      if (state.user) $('question').focus();
+    } catch (error) {
+      signedOut(error.message || 'Не удалось войти.');
+    } finally {
+      $('login-password').value = ''; $('login-submit').disabled = false; state.authBusy = false;
+    }
+  }
+  async function logout() {
+    if (state.authBusy || !state.user) return;
+    state.authBusy = true; state.manualLogin = true; state.sessionRequestId += 1;
+    clearWorkspace(); $('workspace').hidden = true; $('logout-button').disabled = true;
+    try {
+      await fetchJson('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, true);
+      signedOut(); $('login-username').focus();
+    } catch (_) {
+      signedOut('Не удалось подтвердить выход на сервере. Войдите снова, когда соединение восстановится.');
+    } finally { state.authBusy = false; $('logout-button').disabled = false; }
+  }
+  function accessLabel(value) {
+    return value === 2 ? 'Уровень 2' : value === 1 ? 'Уровень 1' : 'Без пометки · доступен уровню 1';
+  }
+  function renderAccess(document) {
+    $('document-access').hidden = false;
+    $('document-access-label').textContent = accessLabel(document.access_level);
+    $('document-access-controls').hidden = state.user?.level !== 2;
+    $('document-access-level').value = document.access_level === 2 ? '2' : '1';
+    $('document-access-save').disabled = false; $('document-access-message').hidden = true;
+  }
+  async function saveDocumentAccess() {
+    if (state.user?.level !== 2 || !state.currentDocument) return;
+    const id = state.currentDocument.id, epoch = state.authEpoch;
+    $('document-access-save').disabled = true; $('document-access-message').hidden = true;
+    try {
+      await fetchJson(`/api/documents/${encodeURIComponent(id)}/access`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_level: Number($('document-access-level').value) }) });
+      if (epoch !== state.authEpoch) return;
+      await refreshSession(true);
+      if (state.user?.level === 2) { await openDocument(id); toast('Уровень доступа сохранён. Контекст диалогов обновлён.'); }
+    } catch (error) {
+      if (epoch !== state.authEpoch) return;
+      $('document-access-message').textContent = error.message;
+      $('document-access-message').className = 'access-error'; $('document-access-message').hidden = false;
+    } finally { if (epoch === state.authEpoch) $('document-access-save').disabled = false; }
   }
 
   function updateMode(health) {
@@ -99,8 +272,6 @@
     $('composer-footnote').textContent = state.mode === 'extractive'
       ? 'Поиск по документам. Для свободных ответов подключите модель.'
       : 'Учебный корпус. Проверяйте применимость положений по источникам.';
-    const count = Number(health.documents);
-    if (Number.isFinite(count)) updateDocumentCount(count);
     $('connection-notice').hidden = true;
   }
   function updateDocumentCount(count) {
@@ -110,8 +281,11 @@
     $('source-count').title = `${count} ${plural(count, ['документ', 'документа', 'документов'])} в базе`;
   }
   async function loadHealth() {
-    try { updateMode(await fetchJson('/api/health')); }
+    const epoch = state.authEpoch;
+    if (!state.user) return;
+    try { const health = await fetchJson('/api/health'); if (epoch === state.authEpoch && state.user) updateMode(health); }
     catch (_) {
+      if (epoch !== state.authEpoch || !state.user) return;
       $('mode-label').textContent = 'Нет подключения';
       $('mode-status').querySelector('.status-dot').className = 'status-dot error';
       $('connection-message').textContent = 'Не удалось подключиться к базе. Проверьте, что сервер запущен.';
@@ -119,8 +293,12 @@
     }
   }
   async function loadDocuments() {
+    const epoch = state.authEpoch;
+    if (!state.user) return;
     try {
       const data = await fetchJson('/api/documents');
+      if (epoch !== state.authEpoch || !state.user) return;
+      if (Number.isInteger(data.acl_revision) && data.acl_revision !== state.aclRevision) { await refreshSession(true); return; }
       state.documents = Array.isArray(data.documents) ? data.documents : [];
       updateDocumentCount(state.documents.length);
       const selected = $('document-kind').value;
@@ -131,6 +309,7 @@
       if ([...$('document-kind').options].some(option => option.value === selected)) $('document-kind').value = selected;
       renderDocuments();
     } catch (_) {
+      if (epoch !== state.authEpoch || !state.user) return;
       const error = element('div', 'panel-error', 'Не удалось загрузить список документов.');
       const retry = element('button', '', 'Загрузить ещё раз');
       retry.type = 'button';
@@ -159,7 +338,7 @@
       button.type = 'button';
       button.setAttribute('aria-label', `Открыть документ: ${titleOf(doc)}`);
       const copy = element('span', 'document-item-copy');
-      copy.append(element('strong', '', titleOf(doc)), element('small', '', kindLabel(doc.kind)));
+      copy.append(element('strong', '', titleOf(doc)), element('small', '', kindLabel(doc.kind)), element('span', 'access-badge', accessLabel(doc.access_level)));
       button.append(icon('file', 'document-list-icon'), copy, element('span', 'document-list-arrow', '›'));
       button.addEventListener('click', () => openDocument(doc.id));
       fragment.append(button);
@@ -223,8 +402,10 @@
 
   async function openDocument(id, citation = null) {
     if (id === undefined || id === null) { toast('У источника не указан документ.'); return; }
+    if (!state.user) return;
     const request = ++state.documentRequestId;
     state.currentDocument = null;
+    $('document-access').hidden = true;
     const metadata = state.documents.find(doc => String(doc.id) === String(id));
     $('document-view-title').textContent = citation?.title || (metadata ? titleOf(metadata) : 'Документ');
     $('document-view-type').textContent = metadata ? kindLabel(metadata.kind) : 'Источник';
@@ -238,21 +419,19 @@
     $('copy-document').disabled = true;
     toggleSourcePanel(true);
     try {
-      let doc = state.documentCache.get(String(id));
-      if (!doc) {
-        doc = await fetchJson(`/api/documents/${encodeURIComponent(id)}`);
-        state.documentCache.set(String(id), doc);
-      }
-      if (request !== state.documentRequestId) return;
+      // Reauthorize every document open; a cached text is not an access grant.
+      const doc = await fetchJson(`/api/documents/${encodeURIComponent(id)}`);
+      if (request !== state.documentRequestId || !state.user) return;
       state.currentDocument = doc;
       $('document-view-title').textContent = titleOf(doc);
       $('copy-document').disabled = false;
+      renderAccess(doc);
       renderDocumentText(doc, citation);
     } catch (error) {
       if (request !== state.documentRequestId) return;
       $('document-text').classList.add('document-error');
       $('document-text').textContent = 'Не удалось открыть документ. Вернитесь к списку и попробуйте ещё раз.';
-      $('document-view-description').textContent = 'Источник временно недоступен';
+      $('document-view-description').textContent = error.status === 404 ? 'Документ недоступен для вашей учётной записи' : 'Источник временно недоступен';
     } finally {
       if (request === state.documentRequestId) {
         $('document-loading').hidden = true;
@@ -441,11 +620,12 @@
     setPending(false);
   }
   async function submitQuestion(question, date = null, retryId = null) {
-    if (state.pending || !question.trim()) return;
+    if (!state.user || !state.historyLoaded || state.pending || !question.trim()) return;
+    const epoch = state.authEpoch;
+    await refreshSession();
+    if (epoch !== state.authEpoch || !state.user || state.pending) return;
     question = question.trim();
     const chat = conversations.active();
-    const history = PSBHistory.context(chat, retryId);
-    const dialogueState = PSBHistory.dialogueState(chat, retryId);
     const request = ++state.requestId;
     const controller = new AbortController();
     state.controller = controller;
@@ -467,7 +647,7 @@
     try {
       const result = await fetchJson('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, history, event_date: date || null, dialogue_state: dialogueState }), signal: controller.signal,
+        body: JSON.stringify({ question, event_date: date || null, conversation_id: chat.id, turn_id: turn.id, acl_revision: state.aclRevision }), signal: controller.signal,
       });
       if (request !== state.requestId) return;
       if (typeof result.answer !== 'string' || !result.answer.trim()) throw new Error('В ответе не оказалось текста. Попробуйте ещё раз.');
@@ -487,6 +667,7 @@
     }
   }
   function resetConversation() {
+    if (!state.user || !state.historyLoaded) return;
     cancelPending();
     conversations.newChat(); state.lastQuestion = null;
     $('question').value = ''; $('event-date').value = ''; updateDate(); resizeTextarea();
@@ -513,14 +694,23 @@
       });
       const remove = element('button', 'history-remove', '×'); remove.type = 'button';
       remove.setAttribute('aria-label', `Удалить диалог: ${title}`);
-      remove.addEventListener('click', () => {
+      remove.addEventListener('click', async () => {
+        const epoch = state.authEpoch;
         if (chat.id === conversations.data.activeId) cancelPending();
-        conversations.remove(chat.id); renderHistory(); renderConversation(); toast('Диалог удалён');
+        remove.disabled = true;
+        try {
+          await fetchJson('/api/history/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversation_id: chat.id }) });
+          if (epoch !== state.authEpoch) return;
+          conversations.remove(chat.id); renderHistory(); renderConversation(); toast('Диалог удалён');
+        } catch (error) { if (epoch === state.authEpoch) toast(error.message); }
+        finally { if (epoch === state.authEpoch) remove.disabled = false; }
       });
       row.append(open, remove); list.append(row);
     }
   }
   function openHistory() {
+    if (!state.user || !state.historyLoaded) return;
     renderHistory(); $('history-delete-confirm').hidden = true; $('history-dialog').showModal();
   }
   function resizeTextarea() {
@@ -555,18 +745,18 @@
   $('history-new-chat').addEventListener('click', () => { $('history-dialog').close(); resetConversation(); });
   $('clear-history').addEventListener('click', () => { $('history-delete-confirm').hidden = false; $('cancel-clear-history').focus(); });
   $('cancel-clear-history').addEventListener('click', () => { $('history-delete-confirm').hidden = true; $('clear-history').focus(); });
-  $('confirm-clear-history').addEventListener('click', () => {
-    cancelPending(); conversations.clear(); renderHistory(); renderConversation();
-    $('history-delete-confirm').hidden = true; toast('История удалена из этого браузера');
+  $('confirm-clear-history').addEventListener('click', async () => {
+    const epoch = state.authEpoch;
+    cancelPending(); $('confirm-clear-history').disabled = true;
+    try {
+      await fetchJson('/api/history/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (epoch !== state.authEpoch) return;
+      conversations.clear(); renderHistory(); renderConversation();
+      $('history-delete-confirm').hidden = true; toast('История вашей учётной записи удалена');
+    } catch (error) { if (epoch === state.authEpoch) toast(error.message); }
+    finally { if (epoch === state.authEpoch) $('confirm-clear-history').disabled = false; }
   });
   $('retry-storage').addEventListener('click', () => { if (conversations.save()) toast('История сохранена'); });
-  window.addEventListener('storage', event => {
-    if (event.key !== PSBHistory.KEY && event.key !== null) return;
-    conversations.refresh();
-    if (state.pendingTurn && !conversations.chat(state.pendingTurn.chatId)) cancelPending();
-    if (!conversations.active()) conversations.newChat();
-    if (!state.pending) { renderConversation(); renderHistory(); }
-  });
   $('open-library').addEventListener('click', () => { setTab('documents'); toggleSourcePanel(true); $('document-search').focus(); });
   $('document-search').addEventListener('input', renderDocuments);
   $('document-kind').addEventListener('change', renderDocuments);
@@ -605,11 +795,17 @@
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
   });
-  $('retry-connection').addEventListener('click', () => { loadHealth(); loadDocuments(); });
+  $('retry-connection').addEventListener('click', () => { refreshSession(true); });
   window.addEventListener('resize', () => {
     if (!window.matchMedia('(max-width: 760px)').matches) toggleSourcePanel(false);
     else if ($('source-panel').classList.contains('is-open')) $('source-backdrop').hidden = false;
   });
-  renderConversation();
-  Promise.allSettled([loadHealth(), loadDocuments()]);
+  $('login-form').addEventListener('submit', login);
+  $('logout-button').addEventListener('click', logout);
+  $('document-access-save').addEventListener('click', saveDocumentAccess);
+  window.addEventListener('focus', () => { refreshSession(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshSession(); });
+  setInterval(() => { if (!document.hidden) refreshSession(); }, 15000);
+  $('mobile-sources').hidden = true;
+  refreshSession();
 })();

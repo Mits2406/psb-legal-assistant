@@ -160,12 +160,13 @@
   }
 
   class Store {
-    constructor(storage, onWarning = () => {}) {
+    constructor(storage, onWarning = () => {}, key = KEY) {
       this.storage = storage;
+      this.key = key;
       this.onWarning = onWarning;
       this.data = { version: 1, activeId: null, chats: [] };
       this.readFailed = false;
-      try { this.data = decode(storage.getItem(KEY)); }
+      try { this.data = decode(storage.getItem(this.key)); }
       catch (_) {
         this.readFailed = true;
         onWarning('Не удалось прочитать сохранённую историю. Она оставлена в браузере; новые сообщения пока хранятся только в этой вкладке.');
@@ -188,7 +189,7 @@
     refresh() {
       if (this.readFailed) return;
       try {
-        const remote = decode(this.storage.getItem(KEY));
+        const remote = decode(this.storage.getItem(this.key));
         this.data = merge(this.data, remote, this.base);
         this.base = JSON.parse(JSON.stringify(remote));
       } catch (_) { /* Keep the last readable history; save() reports failures. */ }
@@ -197,11 +198,11 @@
     save() {
       if (this.readFailed) return false;
       try {
-        const remote = decode(this.storage.getItem(KEY));
+        const remote = decode(this.storage.getItem(this.key));
         this.data = merge(this.data, remote, this.base);
         const raw = JSON.stringify(this.data);
         if (raw.length > MAX_RAW_CHARS) throw new Error('storage_too_large');
-        this.storage.setItem(KEY, raw);
+        this.storage.setItem(this.key, raw);
         this.base = JSON.parse(raw);
         this.onWarning('');
         return true;
@@ -265,7 +266,7 @@
     clear() {
       // User initiated deletion is also the recovery path for an invalid store.
       this.readFailed = false;
-      try { this.storage.removeItem(KEY); } catch (_) { /* save reports the failure */ }
+      try { this.storage.removeItem(this.key); } catch (_) { /* save reports the failure */ }
       this.base = JSON.parse(JSON.stringify(this.data));
       this.data = { version: 1, activeId: null, chats: [] }; this.newChat();
     }

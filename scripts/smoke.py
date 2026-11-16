@@ -35,23 +35,32 @@ def offline_environment() -> dict[str, str]:
 
 
 def check() -> dict:
+    from access_control import AccessStore
     from answer import LegalAssistant
     from app import create_server
 
     env = offline_environment()
-    with patch.dict(os.environ, env, clear=True):
+    with tempfile.TemporaryDirectory(prefix='psb-web-smoke-') as state_dir, patch.dict(os.environ, env, clear=True):
         assistant = LegalAssistant(data_dir=ROOT / 'data')
         assert not assistant.client.enabled, 'Smoke must not use an external model'
-        server = create_server('127.0.0.1', 0, assistant)
+        access = AccessStore(Path(state_dir) / 'access.sqlite', users={
+            'user': {'password': 'fixture-smoke-user-password', 'level': 1},
+        })
+        server = create_server('127.0.0.1', 0, assistant, access_store=access)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f'http://127.0.0.1:{server.server_port}'
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        authentication = {}
 
         def request(path, payload=None):
             body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
-            req = urllib.request.Request(base + path, data=body,
-                                         headers={'Content-Type': 'application/json'} if body else {})
+            headers = {'Content-Type': 'application/json'} if body else {}
+            if authentication:
+                headers['Cookie'] = authentication['cookie']
+                if body is not None:
+                    headers['X-CSRF-Token'] = authentication['csrf_token']
+            req = urllib.request.Request(base + path, data=body, headers=headers)
             with opener.open(req, timeout=15) as response:
                 assert response.status == 200
                 return response.read(), response.headers
@@ -64,6 +73,15 @@ def check() -> dict:
             assert headers.get_content_type() == 'text/html' and b'<html' in html.lower()
             for asset in ('app.js', 'history.js', 'styles.css'):
                 assert request('/static/' + asset)[0]
+            public_health = api('/api/health')
+            assert public_health['authentication_required'] and 'documents' not in public_health
+            assert api('/api/session') == {'authenticated': False}
+            raw_session, login_headers = request('/api/login', {
+                'username': 'user', 'password': 'fixture-smoke-user-password',
+            })
+            authentication.update(json.loads(raw_session))
+            authentication['cookie'] = login_headers['Set-Cookie'].split(';', 1)[0]
+            assert authentication['authenticated'] and authentication['user']['level'] == 1
             health = api('/api/health')
             assert health['mode'] == 'extractive' and health['documents'] == 21
             documents = api('/api/documents')['documents']
@@ -74,20 +92,25 @@ def check() -> dict:
                 assert document['text'][chunk['start']:chunk['end']] == chunk['text']
 
             question = 'Нужно ли одобрение до 12 млн рублей?'
-            clarification = api('/api/chat', {'question': question})
+            conversation = {'conversation_id': 'smoke-approval', 'acl_revision': authentication['acl_revision']}
+            clarification = api('/api/chat', {'question': question, **conversation})
             assert clarification['status'] == 'clarify'
             continued = api('/api/chat', {
-                'question': '2024',
-                'history': [{'role': 'user', 'content': question},
-                            {'role': 'assistant', 'content': clarification['answer']}],
-                'dialogue_state': clarification['dialogue_state'],
+                'question': '2024', **conversation,
             })
             assert continued['answer'] and continued['status'] != 'clarify'
             assert continued.get('citations'), 'Follow-up should expose source fragments'
+            history = api('/api/history')['history']['chats']
+            assert len(history) == 1 and len(history[0]['turns']) == 2
+            assert history[0]['turns'][0]['question'] == question
+            assert api('/api/logout', {}) == {'authenticated': False}
+            authentication.clear()
+            assert api('/api/session') == {'authenticated': False}
         finally:
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)
+            access.close()
 
     with tempfile.TemporaryDirectory(prefix='psb-v20-smoke-') as temp:
         directory = Path(temp)
@@ -117,6 +140,7 @@ def check() -> dict:
         assert '450000' in ''.join(answers[0]['answer'].split())
     return {'status': 'PASS', 'mode': 'offline', 'documents': health['documents'],
             'chunks': health['chunks'], 'http_assets': 4, 'document_offsets': 'PASS',
+            'authentication_and_server_history': 'PASS',
             'clarification_and_followup': 'PASS', 'csv_rows': len(answers),
             'external_model_calls': 0, 'submissions_sent': 0}
 

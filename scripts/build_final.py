@@ -13,7 +13,7 @@ ROOT_FILES = {
 }
 DIRECTORIES = {'static', 'tests', 'scripts', 'docs', 'data', 'evaluation', 'artifacts', '.github'}
 REQUIRED = {
-    *ROOT_FILES, 'app.py', 'solution.py', 'precomputed_index.py',
+    *ROOT_FILES, 'app.py', 'access_control.py', 'scoped_assistant.py', 'solution.py', 'precomputed_index.py',
     'docs/presentation.pdf', 'docs/architecture.md', 'docs/evaluation.md',
     'docs/review-checklist.md', 'artifacts/submission-v20.zip',
     'data/knowledge-base.zip', 'data/demo_questions.csv', 'static/index.html',
@@ -29,7 +29,7 @@ def collect() -> dict[str, bytes]:
             len(parts) == 1 and (path.name in ROOT_FILES or path.suffix == '.py')
         ):
             continue
-        if any(p in {'__pycache__', '.DS_Store', '.venv', '.git', 'tmp'} for p in parts):
+        if any(p in {'__pycache__', '.DS_Store', '.venv', '.git', 'tmp', 'state'} for p in parts):
             continue
         if path.is_symlink():
             raise ValueError(f'Symlinks must not enter the final package: {relative}')
@@ -37,7 +37,9 @@ def collect() -> dict[str, bytes]:
             continue
         if path.name.startswith('.env') and str(relative) != '.env.example':
             raise ValueError(f'Environment file must not enter the package: {relative}')
-        if path.suffix in {'.key', '.pem'} or path.name.lower().startswith(('credentials', 'token')):
+        if (path.suffix in {'.key', '.pem', '.sqlite', '.sqlite3', '.db'}
+                or 'credentials' in path.name.lower() or path.name.lower().startswith('token')
+                or '.sqlite-' in path.name.lower()):
             raise ValueError(f'Potential credential file: {relative}')
         files[relative.as_posix()] = path.read_bytes()
     missing = REQUIRED - files.keys()

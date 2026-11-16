@@ -22,3 +22,10 @@ tmp/
 coverage.xml
 .coverage
 htmlcov/
+state/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+initial-credentials.txt
+.credentials-*
